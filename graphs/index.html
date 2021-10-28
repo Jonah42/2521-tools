@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset='utf-8'>
+	<title>Graph visualiser</title>
+	<link rel='stylesheet' type='text/css' href='index.css'>
+	<script type='text/javascript' src='index.js'></script>
+</head>
+<body>
+	<div class="container">
+		<div class="container-div input-container">
+			<div class="input-method-container">
+				<button class="left-button" id="undirected-button">Undirected</button>
+				<button class="right-button" id="directed-button">Directed</button>
+			</div>
+			<div class="input-method-container">
+				<button class="left-button" id="matrix-button">Adjacency Matrix</button>
+				<button class="right-button" id="list-button">Adjacency List</button>
+			</div>
+			<!-- <div>
+				<h2>Number of nodes:</h2>
+				<input type="text" name="nodes" value="5"/>
+			</div> -->
+			<table id='adjacency-matrix'>
+				<tr><th></th></tr>
+			</table>
+			<table id='adjacency-list'>
+				
+			</table>
+		</div>
+		<div class="container-div graph-container" id="graph-container">
+		</div>
+		<div class="container-div algo-container" id="algo-container">
+			<div class="input-method-container">
+				<button class="left-button" id="bfs-button">BFS</button>
+				<button class="right-button" id="dfs-button">DFS</button>
+			</div>
+			<div class="bfs" id="bfs">
+				<div class="bfs-input-container">
+					<p>Source:  </p>
+					<input type="text" name="nodes" id="bfs-source"/>
+				</div>
+				<div id="bfs-code-container">
+				</div>
+				<div class="bfs-controls">
+					<button id="bfs-start">Start</button>
+					<button id="bfs-next">Next</button>
+					<button id="bfs-reset">Reset</button>
+				</div>
+				<div class="output-container">
+					<div>
+						<p>Output:</p>
+						<div id="bfs-terminal"></div>
+					</div>
+					<div>
+						<p>Queue:</p>
+						<div id="bfs-q"></div>
+					</div>
+				</div>
+			</div>
+			<div class="dfs" id="dfs">
+				<div class="bfs-input-container">
+					<p>Source:  </p>
+					<input type="text" name="nodes" id="dfs-source"/>
+				</div>
+				<div id="dfs-code-container">
+				</div>
+				<div class="bfs-controls">
+					<button id="dfs-start">Start</button>
+					<button id="dfs-next">Next</button>
+					<button id="dfs-reset">Reset</button>
+				</div>
+				<div class="output-container">
+					<div>
+						<p>Output:</p>
+						<div id="dfs-terminal"></div>
+					</div>
+					<div>
+						<p>Stack:</p>
+						<div id="dfs-q"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</body>
+</html>

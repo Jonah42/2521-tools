@@ -6,12 +6,37 @@
 	<link rel='stylesheet' type='text/css' href='index.css'>
 	<script type='text/javascript' src='index.js'></script>
 </head>
-<body>
+<body id="body">
+	<div id="weight-prompt-background">
+		<div class="weight-prompt-container">
+			<div class="weight-button-container">
+				<button id="weight-accept-button" class="prompt-button">Ok</button>
+				<button id="weight-cancel-button" class="prompt-button">Cancel</button>
+			</div>
+			<div class="weight-input-container-wrapper">
+				<div class="weight-input-container">
+					<p>Weight: </p>
+					<input type="text" name="weight" id="weight-value">
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="readme">
+		<p> - click to place node</p>
+		<p> - delete or backspace to delete a node</p>
+		<p> - press backtick key to reset completely</p>
+		<p>Any bugs please email j.meggs@unsw.edu.au</p>
+		<p>Enjoy :)</p>
+	</div>
 	<div class="container">
 		<div class="container-div input-container">
 			<div class="input-method-container">
 				<button class="left-button" id="undirected-button">Undirected</button>
 				<button class="right-button" id="directed-button">Directed</button>
+			</div>
+			<div class="input-method-container">
+				<button class="left-button" id="unweighted-button">Unweighted</button>
+				<button class="right-button" id="weighted-button">Weighted</button>
 			</div>
 			<div class="input-method-container">
 				<button class="left-button" id="matrix-button">Adjacency Matrix</button>
@@ -33,7 +58,8 @@
 		<div class="container-div algo-container" id="algo-container">
 			<div class="input-method-container">
 				<button class="left-button" id="bfs-button">BFS</button>
-				<button class="right-button" id="dfs-button">DFS</button>
+				<button class="middle-button" id="dfs-button">DFS</button>
+				<button class="right-button" id="dijkstra-button">Dijkstra</button>
 			</div>
 			<div class="bfs" id="bfs">
 				<div class="bfs-input-container">
@@ -79,6 +105,30 @@
 						<p>Stack:</p>
 						<div id="dfs-q"></div>
 					</div>
+				</div>
+			</div>
+			<div class="dijkstra" id="dijkstra">
+				<div class="bfs-input-container">
+					<p>Source:  </p>
+					<input type="text" name="nodes" id="dijkstra-source"/>
+				</div>
+				<div id="dijkstra-code-container">
+				</div>
+				<div class="bfs-controls">
+					<button id="dijkstra-start">Start</button>
+					<button id="dijkstra-next">Next</button>
+					<button id="dijkstra-reset">Reset</button>
+				</div>
+				<div class="dijkstra-output-container">
+					<div>
+						<p>vSet:</p>
+						<div id="dijkstra-vset"> </div>
+					</div>
+					<table id="dijkstra-table">
+						<tr><th></th></tr>
+						<tr><th>dist</th></tr>
+						<tr><th>pred</th></tr>
+					</table>
 				</div>
 			</div>
 		</div>

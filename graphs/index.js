@@ -1,17 +1,16 @@
 // Written by Jonah Meggs 2021
-init();
 
 let nodes = [];
-let available = new Array(1000);
-for (let i = 0; i < 1000; i++) {
-	available[i] = new Array(1000).fill(0);
-}
-let xFill = [];
-let yFill = [];
+let node_elements = [];
+let recycled_nodes = [];
+let outgoing = [];
 
 let selected = null;
+let selected2 = null;
 let directed = false;
+let weighted = false;
 let list = false;
+let waiting_for_weight = false;
 let nextNode = 0;
 let rendered = [];
 let bfs_code = [
@@ -59,27 +58,43 @@ let dfs_code = [
 '	free(visited);',
 '}'
 ];
+
+let dijkstra_code = [
+'dist[]  // array of cost of shortest path from s',
+'pred[]  // array of predecessor in shortest path from s',
+'vSet    // vertices whose shortest path from s is unknown',
+'dijkstraSSSP(G,source):',
+'|  Input graph G, source node',
+'|  initialise all dist[] to ∞',
+'|  dist[source]=0',
+'|  initialise all pred[] to -1',
+'|  vSet=all vertices of G',
+'|  while vSet ≠ ∅ do',
+'|  |  find v ∈ vSet with minimum dist[v]',
+'|  |  for each (v,w,weight) ∈ edges(G) do',
+'|  |     relax along (v,w,weight)',
+'|  |  end for',
+'|  |  vSet=vSet \\ {v}',
+'|  end while'
+];
 let bfs_lines = [];
 let dfs_lines = [];
+let dijkstra_lines = [];
+
+init();
 
 function init() {
 	if (document.readyState === 'complete') {
-		// nodes.push(document.getElementById('node-0'));
-		// nodes.push(document.getElementById('node-1'));
-		// nodes.push(document.getElementById('node-2'));
-		// nodes.push(document.getElementById('node-3'));
-		// nodes.push(document.getElementById('node-4'));
-		// nodes.forEach(node => {node.addEventListener('click', selectNode)});
-		// nodes[0].style.left = "75vw";
-		// nodes[0].style.top = "50vh";
-		createCircleFill();
-		// fillCircle(500, 500);
-		// spread(nodes);
+		document.getElementById('body').addEventListener('keyup', respondToKey)
 		document.getElementById('directed-button').addEventListener('click', setDirected);
 		document.getElementById('undirected-button').addEventListener('click', setUndirected);
+		document.getElementById('weighted-button').addEventListener('click', setWeighted);
+		document.getElementById('unweighted-button').addEventListener('click', setUnweighted);
 		document.getElementById('matrix-button').addEventListener('click', setMatrix);
 		document.getElementById('list-button').addEventListener('click', setList);
 		document.getElementById('graph-container').addEventListener('click', createNode);
+		document.getElementById('weight-accept-button').addEventListener('click', acceptWeight);
+		document.getElementById('weight-cancel-button').addEventListener('click', cancelWeight);
 		initGraph(nextNode);
 		let matrix_tbl = document.getElementById('adjacency-matrix');
 		for (let i = 0; i < nextNode; i++) {
@@ -112,129 +127,183 @@ function init() {
 			dfs_lines.push(p);
 			dfs_code_container.appendChild(p);
 		});
+		document.getElementById('dijkstra-start').addEventListener('click', startDijkstra);
+		document.getElementById('dijkstra-next').addEventListener('click', nextDijkstra);
+		document.getElementById('dijkstra-next').disabled = true;
+		document.getElementById('dijkstra-reset').addEventListener('click', resetDijkstra);
+		document.getElementById('dijkstra-reset').disabled = true;
+		let dijkstra_code_container = document.getElementById('dijkstra-code-container');
+		dijkstra_code.forEach(line => {
+			let p = document.createElement('p');
+			p.innerHTML = line;
+			dijkstra_lines.push(p);
+			dijkstra_code_container.appendChild(p);
+		});
 		document.getElementById('bfs-button').addEventListener('click', showBFS);
 		document.getElementById('dfs-button').addEventListener('click', showDFS);
+		document.getElementById('dijkstra-button').addEventListener('click', showDijkstra);
 		alert('Click somewhere in the middle panel to place a node! (and make edges by clicking 2 nodes consecutively!)')
 		return;
 	}
 	setTimeout(init, 100);
 }
 
-function createNode(event) {
-	if (bfs_running || dfs_running) {
-		alert('You cant change the graph while the algo is running :( - try resetting the algo first.');
+function respondToKey(event) {
+	if (waiting_for_weight) {
+		if (event.keyCode === 13) acceptWeight();
 		return;
 	}
-	let n = document.createElement('div');
-	n.classList.add('node');
-	n.id = 'node-'+nextNode;
-	n.style.left = event.clientX-20+'px';
-	n.style.top = event.clientY-20+'px';
-	n.innerHTML = nextNode;
-	n.addEventListener('click', selectNode);
-	document.getElementById('graph-container').appendChild(n);
-	nodes.push(n);
-	insertNode(nextNode);
-	// Update matrix
+	if (event.keyCode === 46 || event.keyCode === 8) {
+		if (bfs_running || dfs_running || dijkstra_running) {
+			alert('You cant change the graph while the algo is running :( - try resetting the algo first.');
+			return;
+		}
+		if (selected !== null) {
+			deleteNode(selected);
+			selected = null;
+		}
+	} else if (event.keyCode === 192) {
+		if (bfs_running) resetBFS();
+		if (dfs_running) resetDFS();
+		if (dijkstra_running) resetDijkstra();
+		reset();
+
+	}
+}
+
+function getNextNodeValue() {
+	// console.log("mep");
+	if (recycled_nodes.length > 0) {
+		return recycled_nodes.shift();
+	}
+	return nextNode++;
+}
+
+function getIndex(value) {
+	console.log(nodes)
+	let index = nodes.slice().reverse().findIndex(elem => {return elem < value});
+	console.log("In Index", value, index);
+	if (index === -1) index = 0;
+	else index = nodes.length - index;
+	// console.log(index)
+	return index;
+}
+
+function insertDomMatrix(value) {
 	let matrix_tbl = document.getElementById('adjacency-matrix');
 	let th = document.createElement('th');
-	th.innerHTML = ''+nextNode;
-	matrix_tbl.rows[0].appendChild(th);
-	for (let i = 0; i < nextNode; i++) {
+	th.innerHTML = ''+value;
+	let index = getIndex(value);
+	console.log(value, index);
+	matrix_tbl.rows[0].cells[index].insertAdjacentElement('afterend', th);
+	for (let i = 0; i < nodes.length-1; i++) {
 		let td = document.createElement('td');
 		td.innerHTML = '-1';
 		td.style.color = 'grey';
-		matrix_tbl.rows[i+1].appendChild(td);
+		matrix_tbl.rows[i+1].cells[index].insertAdjacentElement('afterend', td);
 	}
 	let tr = document.createElement('tr');
 	th = document.createElement('th');
-	th.innerHTML = ''+nextNode;
+	th.innerHTML = ''+value;
 	tr.appendChild(th);
-	for (let i = 0; i <= nextNode; i++) {
+	for (let i = 0; i < nodes.length; i++) {
 		let td = document.createElement('td');
 		td.innerHTML = '-1';
 		td.style.color = 'grey';
 		tr.appendChild(td);
 	}
-	matrix_tbl.appendChild(tr);
-	// Update list
+	matrix_tbl.rows[index].insertAdjacentElement('afterend', tr);
+}
+
+function insertDomList(value) {
+	let index = getIndex(value);
 	let list_tbl = document.getElementById('adjacency-list');
 	tr = document.createElement('tr');
 	th = document.createElement('th');
-	th.innerHTML = ''+nextNode;
+	th.innerHTML = ''+value;
 	let td = document.createElement('td');
+	td.innerHTML = ' ';
 	tr.appendChild(th);
 	tr.appendChild(td);
-	list_tbl.appendChild(tr);
-	nextNode++;
+	if (nodes.length === 1) list_tbl.appendChild(tr);
+	else if (index === 0) list_tbl.rows[0].insertAdjacentElement('beforebegin', tr);
+	else list_tbl.rows[index-1].insertAdjacentElement('afterend', tr);
 }
 
-function spread(nodes, rand) {
+function removeDomMatrix(value, index) {
+	let matrix_tbl = document.getElementById('adjacency-matrix');
+	let rem;
+	rem = matrix_tbl.rows[0].cells[index+1];
+	rem.parentNode.removeChild(rem);
+	rem = matrix_tbl.rows[index+1];
+	rem.parentNode.removeChild(rem);
 	for (let i = 0; i < nodes.length; i++) {
-		for (let j = i+1; j < nodes.length; j++) {
-			let dist = Math.sqrt(Math.pow(nodes[i].offsetLeft - nodes[j].offsetLeft, 2) + Math.pow(nodes[i].offsetTop - nodes[j].offsetTop, 2));
-			if (dist < 60) {
-				if (nodes[j].style.left === '') {
-					console.log(j);
-					let direction = Math.random()*2*Math.PI;
-					relocate(nodes[j], direction);
-					// printAvailable();
-				}
+		rem = matrix_tbl.rows[i+1].cells[index+1];
+		rem.parentNode.removeChild(rem);
+	}
+}
+
+function removeDomList(value, index) {
+	let list_tbl = document.getElementById('adjacency-list');
+	list_tbl.removeChild(list_tbl.rows[index]);
+	for (let i = 0; i < nodes.length; i++) {
+		list_tbl.rows[i].cells[1].innerHTML = list_tbl.rows[i].cells[1].innerText.replace(`-> ${value} `, '');
+	}
+}
+
+function createNode(event) {
+	if (bfs_running || dfs_running || dijkstra_running) {
+		alert('You cant change the graph while the algo is running :( - try resetting the algo first.');
+		return;
+	}
+	const value = getNextNodeValue();
+	let n = document.createElement('div');
+	n.classList.add('node');
+	n.id = 'node-'+value;
+	n.style.left = event.clientX-20+'px';
+	n.style.top = event.clientY-20+'px';
+	n.innerHTML = value;
+	n.addEventListener('click', selectNode);
+	document.getElementById('graph-container').appendChild(n);
+	node_elements.push(n);
+	node_elements.sort((a, b) => {return parseInt(a.value) < parseInt(b.value)});
+	nodes.push(value);
+	nodes.sort((a, b) => {return a < b;});
+	outgoing.splice(getIndex(value), 0, []);
+	insertNode(value);
+	// Update matrix
+	insertDomMatrix(value);
+	// Update list
+	insertDomList(value);
+}
+
+function deleteNode(node) {
+	const value = parseInt(node.innerHTML);
+	const index = getIndex(value);
+	recycled_nodes.push(value);
+	recycled_nodes.sort();
+	nodes.splice(index, 1);
+	node_elements.splice(index, 1);
+	removeNode(value, index); // remove from graph
+	node.parentNode.removeChild(node);
+	outgoing[index].forEach(elem => {elem.parentNode.removeChild(elem);});
+	outgoing.splice(index, 1);
+	outgoing.forEach(list => {
+		for (let i = 0; i < list.length; i++) {
+			console.log(list[i]['data-to']);
+			if (list[i]['data-to'] === value) {
+				list[i].parentNode.removeChild(list[i]);
+				list.splice(i, 1);
+				i--;
 			}
 		}
-	}
-}
-
-function createCircleFill() {
-	let radius = 100;
-	for (let i = -radius; i <= radius; i++) {
-		for (let j = -radius; j <= radius; j++) {
-			if (Math.sqrt(Math.pow(i, 2) + Math.pow(j, 2)) <= radius) {
-				xFill.push(i);
-				yFill.push(j);
-				// console.log(i, j);
-			}
-		}
-	}
-}
-
-function fillCircle(x, y) {
-	for (let i = 0; i < xFill.length; i++) {
-		// if (xFill[i] >50 || xFill[i] < -50) console.log("eeekkk");
-		available[x+xFill[i]][y+yFill[i]]++;
-	}
-}
-
-function printAvailable() {
-	let line = '';
-	for (let i = 0; i < 20; i++) {
-		for (let j = 0; j < 20; j++) {
-			line += available[i*50][j*50];
-		}
-		line += '\n';
-	}
-	console.log(line);
-}
-
-function relocate(node, direction) {
-	let x, y;
-	for (let i = 0; i < 500; i++) {
-		x = Math.floor(Math.sin(direction)*i);
-		y = Math.floor(Math.cos(direction)*i);
-		if (!available[500+x][500+y]) {
-			console.log(500+x, 500+y, direction);
-			fillCircle(500+x, 500+y);
-			node.style.left = (50+(500+x)/20)+"vw";
-			node.style.top = ((500+y)/10)+"vh";
-			return;
-		}
-		// console.log("\tnot available", 500+x, 500+y);
-	}
-	console.log("hmmm", direction);
+	});
+	removeDomMatrix(value, index);
+	removeDomList(value, index);
 }
 
 function selectNode(event) {
-	if (bfs_running || dfs_running) {
+	if (bfs_running || dfs_running || dijkstra_running) {
 		event.stopPropagation();
 		alert('You cant change the graph while the algo is running :( - try resetting the algo first.');
 		return;
@@ -246,30 +315,70 @@ function selectNode(event) {
 		selected = this;
 		this.style.boxShadow = '0px 0px 15px 5px rgba(128, 128, 255, .75)';
 	} else {
-		if (!containsEdge(parseInt(selected.innerHTML), parseInt(this.innerHTML))) drawLine(selected, this);
+		console.log("attempting to draw");
+		if (!containsEdge(parseInt(selected.innerHTML), parseInt(this.innerHTML))) {
+			// console.log("HMMM");
+			if (weighted) {
+				// console.log("MMMM");
+				selected2 = this;
+				promptWeight();
+				event.stopPropagation();
+				return;
+			} else {
+				drawLine(selected, this);
+			}
+		}
 		selected.style.boxShadow = 'none';
 		selected = null;
 	}
 	event.stopPropagation();
 }
 
-function drawLine(a, b) {
+function promptWeight() {
+	// console.log("hello");
+	document.getElementById('weight-prompt-background').style.display = 'block';
+	document.getElementById('weight-value').focus();
+	waiting_for_weight = true;
+}
+
+function acceptWeight() {
+	let weight = parseInt(document.getElementById('weight-value').value);
+	if (Number.isInteger(weight)) {
+		document.getElementById('weight-value').value = '';
+		document.getElementById('weight-prompt-background').style.display = 'none';
+		drawLine(selected, selected2, weight);
+		waiting_for_weight = false;
+		selected.style.boxShadow = 'none';
+		selected = null;
+	}
+}
+
+function cancelWeight() {
+	document.getElementById('weight-value').value = '';
+	document.getElementById('weight-prompt-background').style.display = 'none';
+	waiting_for_weight = false;
+}
+
+function drawLine(a, b, weight=1) {
 	const graph = document.getElementById('graph-container');
 	if (!directed || (directed && !containsEdge(parseInt(b.innerHTML), parseInt(a.innerHTML)))) {
 		let line = document.createElement('div');
-		line.style.height = '0px';
+		line.classList.add('edge');
+		if (weighted) {
+			let w = document.createElement('div');
+			w.classList.add('weight');
+			w.innerHTML = weight;
+			w.style.transform = `rotate(${Math.atan((a.offsetTop - b.offsetTop)/(a.offsetLeft - b.offsetLeft))*(-180)/Math.PI}deg)`;
+			line.appendChild(w);
+		}
 		line.style.width = Math.sqrt(Math.pow(a.offsetLeft - b.offsetLeft, 2) + Math.pow(a.offsetTop - b.offsetTop, 2))+'px';
-		line.style.borderTop = '2px solid black';
-		line.style.zIndex = '0'
-		line.style.transformOrigin = "0% 0%";
 		line.style.transform = `rotate(${Math.atan((a.offsetTop - b.offsetTop)/(a.offsetLeft - b.offsetLeft))*180/Math.PI}deg)`;
-		// console.log(a.style.left);
-		if (a.offsetLeft <= b.offsetLeft) line.style.left = (parseInt(window.getComputedStyle(a, null).getPropertyValue("left").slice(0,-2))+20)+'px';
+		if (a.offsetLeft < b.offsetLeft) line.style.left = (parseInt(window.getComputedStyle(a, null).getPropertyValue("left").slice(0,-2))+20)+'px';
 		else line.style.left = (parseInt(window.getComputedStyle(b, null).getPropertyValue("left").slice(0,-2))+20)+'px';
-		if (a.offsetLeft <= b.offsetLeft) line.style.top = (parseInt(window.getComputedStyle(a, null).getPropertyValue("top").slice(0,-2))+20)+'px';
+		if (a.offsetLeft < b.offsetLeft) line.style.top = (parseInt(window.getComputedStyle(a, null).getPropertyValue("top").slice(0,-2))+20)+'px';
 		else line.style.top = (parseInt(window.getComputedStyle(b, null).getPropertyValue("top").slice(0,-2))+20)+'px';
-		line.style.position = 'absolute';
-		rendered.push(line);
+		line['data-to'] = parseInt(b.innerHTML);
+		outgoing[getIndex(parseInt(a.innerHTML))].push(line);
 		graph.appendChild(line);
 	}
 	if (directed) {
@@ -288,30 +397,32 @@ function drawLine(a, b) {
 		arrow.style.left = l+'px';
 		let r = b.offsetTop + 20 - 20*Math.sin(Math.atan((a.offsetTop - b.offsetTop)/(a.offsetLeft - b.offsetLeft))+(b.offsetLeft<a.offsetLeft?Math.PI:0));
 		arrow.style.top = r+'px';
-		console.log(l-b.offsetLeft-20, r-b.offsetTop-20);
-		rendered.push(arrow);
+		// console.log(l-b.offsetLeft-20, r-b.offsetTop-20);
+		arrow['data-to'] = parseInt(b.innerHTML);
+		outgoing[getIndex(parseInt(a.innerHTML))].push(arrow);
 		graph.appendChild(arrow);
 	}
 	const matrix_tbl = document.getElementById('adjacency-matrix');
 	const list_tbl = document.getElementById('adjacency-list');
 	// console.log(tbl.rows[1].cells[1]);
 	// console.log(a.value)
-	insertEdge(parseInt(a.innerHTML), parseInt(b.innerHTML), directed);
+	insertEdge(parseInt(a.innerHTML), parseInt(b.innerHTML), directed, weight);
 
-	matrix_tbl.rows[parseInt(a.innerHTML)+1].cells[parseInt(b.innerHTML)+1].innerHTML = '1'; 
-	matrix_tbl.rows[parseInt(a.innerHTML)+1].cells[parseInt(b.innerHTML)+1].style.color = 'black'; 
-	list_tbl.rows[parseInt(a.innerHTML)].cells[1].innerHTML += ' -> ' + b.innerHTML;
+	matrix_tbl.rows[getIndex(parseInt(a.innerHTML))+1].cells[getIndex(parseInt(b.innerHTML))+1].innerHTML = weight; 
+	matrix_tbl.rows[getIndex(parseInt(a.innerHTML))+1].cells[getIndex(parseInt(b.innerHTML))+1].style.color = 'black'; 
+	list_tbl.rows[getIndex(parseInt(a.innerHTML))].cells[1].innerHTML += '-> ' + b.innerHTML + ' ';
 	if (!directed) {
-		matrix_tbl.rows[parseInt(b.innerHTML)+1].cells[parseInt(a.innerHTML)+1].innerHTML = '1';
-		matrix_tbl.rows[parseInt(b.innerHTML)+1].cells[parseInt(a.innerHTML)+1].style.color = 'black'; 
-		list_tbl.rows[parseInt(b.innerHTML)].cells[1].innerHTML += ' -> ' + a.innerHTML;
+		matrix_tbl.rows[getIndex(parseInt(b.innerHTML))+1].cells[getIndex(parseInt(a.innerHTML))+1].innerHTML = weight;
+		matrix_tbl.rows[getIndex(parseInt(b.innerHTML))+1].cells[getIndex(parseInt(a.innerHTML))+1].style.color = 'black'; 
+		list_tbl.rows[getIndex(parseInt(b.innerHTML))].cells[1].innerHTML += '-> ' + a.innerHTML + ' ';
 	}
 }
 
 function reset() {
-	rendered.forEach(thing => {thing.parentNode.removeChild(thing);});
-	rendered = [];
-	nodes.forEach(thing => {thing.parentNode.removeChild(thing);});
+	outgoing.forEach(list => {list.forEach(elem => {elem.parentNode.removeChild(elem);});});
+	outgoing = [];
+	node_elements.forEach(thing => {thing.parentNode.removeChild(thing);});
+	node_elements = [];
 	nodes = [];
 	let matrix_tbl = document.getElementById('adjacency-matrix');
 	let list_tbl = document.getElementById('adjacency-list');
@@ -334,7 +445,7 @@ function reset() {
 }
 
 function setDirected(event) {
-	if (bfs_running || dfs_running) {
+	if (bfs_running || dfs_running || dijkstra_running) {
 		alert('You cant change the graph while the algo is running :( - try resetting the algo first.');
 		return;
 	}
@@ -346,7 +457,7 @@ function setDirected(event) {
 }
 
 function setUndirected(event) {
-	if (bfs_running || dfs_running) {
+	if (bfs_running || dfs_running || dijkstra_running) {
 		alert('You cant change the graph while the algo is running :( - try resetting the algo first.');
 		return;
 	}
@@ -354,6 +465,30 @@ function setUndirected(event) {
 	directed = false;
 	this.style.backgroundColor = 'white'
 	document.getElementById('directed-button').style.backgroundColor = '#F0F0F0';
+	reset();
+}
+
+function setWeighted(event) {
+	if (bfs_running || dfs_running || dijkstra_running) {
+		alert('You cant change the graph while the algo is running :( - try resetting the algo first.');
+		return;
+	}
+	if (weighted) return;
+	weighted = true;
+	this.style.backgroundColor = 'white'
+	document.getElementById('unweighted-button').style.backgroundColor = '#F0F0F0';
+	reset();
+}
+
+function setUnweighted(event) {
+	if (bfs_running || dfs_running || dijkstra_running) {
+		alert('You cant change the graph while the algo is running :( - try resetting the algo first.');
+		return;
+	}
+	if (!weighted) return;
+	weighted = false;
+	this.style.backgroundColor = 'white'
+	document.getElementById('weighted-button').style.backgroundColor = '#F0F0F0';
 	reset();
 }
 
@@ -390,16 +525,21 @@ let bfs_q = [];
 let bfs_source = 0;
 let bfs_v = -1;
 let bfs_visited;
-let bfs_w = -1;
+let bfs_w_index = -1;
 let bfs_running = false;
 
 function showBFS(event) {
 	if (dfs_running) resetDFS();
+	if (dijkstra_running) resetDijkstra();
 	let dfs_button = document.getElementById('dfs-button');
+	let dijkstra_button = document.getElementById('dijkstra-button');
 	let dfs = document.getElementById('dfs');
 	let bfs = document.getElementById('bfs');
+	let dijkstra = document.getElementById('dijkstra');
 	dfs_button.style.backgroundColor = '#F0F0F0';
+	dijkstra_button.style.backgroundColor = '#F0F0F0';
 	dfs.style.display = 'none';
+	dijkstra.style.display = 'none';
 	this.style.backgroundColor = 'white';
 	bfs.style.display = 'flex';
 }
@@ -411,21 +551,23 @@ function startBFS(event) {
 		return;
 	}
 	bfs_source = parseInt(sourceText);
-	if (bfs_source < 0 || bfs_source >= nextNode) {
+	if (bfs_source < 0 || !nodes.includes(bfs_source)) {
 		alert("Source is not a valid node :(");
 		return;
 	}
 	document.getElementById('bfs-source').disabled = true;
+	document.getElementById('bfs-start').disabled = true;
 	document.getElementById('bfs-next').disabled = false;
 	document.getElementById('bfs-reset').disabled = false;
 	bfs_line = 1;
 	bfs_lines[bfs_line].style.backgroundColor = "yellow";
 	bfs_visited = [];
-	for (let i = 0; i < nextNode; i++) {
+	for (let i = 0; i < nodes.length; i++) {
 		bfs_visited.push(0);
 	}
 	bfs_running = true;
 	bfs_v = -1;
+	bfs_w_index = -1;
 }
 
 function nextBFS(event) {
@@ -446,23 +588,23 @@ function nextBFS(event) {
 		}
 		bfs_lines[bfs_line].style.backgroundColor = "yellow";
 	} else if (bfs_line === 5) {
-		if (bfs_v !== -1) nodes[bfs_v].style.boxShadow = '0px 0px 15px 5px rgba(255, 0, 0, .75)';
+		if (bfs_v !== -1) node_elements[getIndex(bfs_v)].style.boxShadow = '0px 0px 15px 5px rgba(255, 0, 0, .75)';
 		bfs_v = bfs_q.shift();
-		nodes[bfs_v].style.boxShadow = '0px 0px 15px 5px rgba(0, 255, 0, .75)';
+		node_elements[getIndex(bfs_v)].style.boxShadow = '0px 0px 15px 5px rgba(0, 255, 0, .75)';
 		let tmp = document.getElementById('bfs-q').innerHTML;
 		const s = tmp.indexOf("\n");
 		document.getElementById('bfs-q').innerHTML = tmp.slice(s+1);
 		bfs_line++;
 		bfs_lines[bfs_line].style.backgroundColor = "yellow";
 	} else if (bfs_line === 6) {
-		if (bfs_visited[bfs_v]) bfs_line++;
+		if (bfs_visited[getIndex(bfs_v)]) bfs_line++;
 		else bfs_line += 3;
 		bfs_lines[bfs_line].style.backgroundColor = "yellow";
 	} else if (bfs_line === 7) {
 		bfs_line = 4;
 		bfs_lines[bfs_line].style.backgroundColor = "yellow";
 	} else if (bfs_line === 9) {
-		bfs_visited[bfs_v] = 1;
+		bfs_visited[getIndex(bfs_v)] = 1;
 		bfs_line++;
 		bfs_lines[bfs_line].style.backgroundColor = "yellow";
 	} else if (bfs_line === 10) {
@@ -470,38 +612,40 @@ function nextBFS(event) {
 		bfs_line++;
 		bfs_lines[bfs_line].style.backgroundColor = "yellow";
 	} else if (bfs_line === 11) {
-		if (bfs_w === -1) bfs_w = 0;
-		else bfs_w++;
-		if (bfs_w >= nextNode) {
-			bfs_w = -1;
+		if (bfs_w_index === -1) bfs_w_index = 0;
+		else bfs_w_index++;
+		if (bfs_w_index >= nodes.length) {
+			bfs_w_index = -1;
 			bfs_line = 4;
 		} else {
 			bfs_line++;
 		}
 		bfs_lines[bfs_line].style.backgroundColor = "yellow";
 	} else if (bfs_line === 12) {
-		if (containsEdge(bfs_v, bfs_w) && !bfs_visited[bfs_w]) bfs_line++;
+		if (containsEdge(bfs_v, nodes[bfs_w_index]) && !bfs_visited[bfs_w_index]) bfs_line++;
 		else bfs_line--;
 		bfs_lines[bfs_line].style.backgroundColor = "yellow";
 	} else if (bfs_line === 13) {
-		bfs_q.push(bfs_w);
-		document.getElementById('bfs-q').innerHTML += `${bfs_w}\n`;
-		nodes[bfs_w].style.boxShadow = '0px 0px 15px 5px rgba(0, 0, 255, .75)';
+		bfs_q.push(nodes[bfs_w_index]);
+		document.getElementById('bfs-q').innerHTML += `${nodes[bfs_w_index]}\n`;
+		node_elements[bfs_w_index].style.boxShadow = '0px 0px 15px 5px rgba(0, 0, 255, .75)';
 		bfs_line = 11;
 		bfs_lines[bfs_line].style.backgroundColor = "yellow";
 	} else if (bfs_line === 18) {
 		document.getElementById('bfs-next').disabled = true;
+		document.getElementById('bfs-start').disabled = false;
 	}
 }
 
 function resetBFS(event) {
 	document.getElementById('bfs-source').disabled = false;
+	document.getElementById('bfs-start').disabled = false;
 	document.getElementById('bfs-next').disabled = true;
 	document.getElementById('bfs-reset').disabled = true;
 	bfs_running = false;
 	bfs_lines[bfs_line].style.backgroundColor = "whitesmoke";
-	for (let i = 0; i < nextNode; i++) {
-		nodes[i].style.boxShadow = 'none';
+	for (let i = 0; i < nodes.length; i++) {
+		node_elements[i].style.boxShadow = 'none';
 	}
 	document.getElementById('bfs-terminal').innerHTML = '';
 	document.getElementById('bfs-q').innerHTML = '';
@@ -521,16 +665,21 @@ let dfs_s = [];
 let dfs_source = 0;
 let dfs_v = -1;
 let dfs_visited;
-let dfs_w = nextNode;
+let dfs_w_index = nodes.length;
 let dfs_running = false;
 
 function showDFS(event) {
 	if (bfs_running) resetBFS();
+	if (dijkstra_running) resetDijkstra();
 	let bfs_button = document.getElementById('bfs-button');
+	let dijkstra_button = document.getElementById('dijkstra-button');
 	let bfs = document.getElementById('bfs');
 	let dfs = document.getElementById('dfs');
+	let dijkstra = document.getElementById('dijkstra');
 	bfs_button.style.backgroundColor = '#F0F0F0';
+	dijkstra_button.style.backgroundColor = '#F0F0F0';
 	bfs.style.display = 'none';
+	dijkstra.style.display = 'none';
 	this.style.backgroundColor = 'white';
 	dfs.style.display = 'flex';
 }
@@ -542,22 +691,23 @@ function startDFS(event) {
 		return;
 	}
 	dfs_source = parseInt(sourceText);
-	if (dfs_source < 0 || dfs_source >= nextNode) {
+	if (dfs_source < 0 || !nodes.includes(dfs_source)) {
 		alert("Source is not a valid node :(");
 		return;
 	}
 	document.getElementById('dfs-source').disabled = true;
+	document.getElementById('dfs-start').disabled = true;
 	document.getElementById('dfs-next').disabled = false;
 	document.getElementById('dfs-reset').disabled = false;
 	dfs_line = 1;
 	dfs_lines[dfs_line].style.backgroundColor = "yellow";
 	dfs_visited = [];
-	for (let i = 0; i < nextNode; i++) {
+	for (let i = 0; i < nodes.length; i++) {
 		dfs_visited.push(0);
 	}
 	dfs_running = true;
 	dfs_v = -1;
-	dfs_w = nextNode;
+	dfs_w_index = nodes.length;
 }
 
 function nextDFS(event) {
@@ -578,23 +728,23 @@ function nextDFS(event) {
 		}
 		dfs_lines[dfs_line].style.backgroundColor = "yellow";
 	} else if (dfs_line === 5) {
-		if (dfs_v !== -1) nodes[dfs_v].style.boxShadow = '0px 0px 15px 5px rgba(255, 0, 0, .75)';
+		if (dfs_v !== -1) node_elements[getIndex(dfs_v)].style.boxShadow = '0px 0px 15px 5px rgba(255, 0, 0, .75)';
 		dfs_v = dfs_s.pop();
-		nodes[dfs_v].style.boxShadow = '0px 0px 15px 5px rgba(0, 255, 0, .75)';
+		node_elements[getIndex(dfs_v)].style.boxShadow = '0px 0px 15px 5px rgba(0, 255, 0, .75)';
 		let tmp = document.getElementById('dfs-q').innerHTML;
 		const s = tmp.slice(0,-1).lastIndexOf("\n");
 		document.getElementById('dfs-q').innerHTML = tmp.slice(0,(s===-1?0:s+1));
 		dfs_line++;
 		dfs_lines[dfs_line].style.backgroundColor = "yellow";
 	} else if (dfs_line === 6) {
-		if (dfs_visited[dfs_v]) dfs_line++;
+		if (dfs_visited[getIndex(dfs_v)]) dfs_line++;
 		else dfs_line += 3;
 		dfs_lines[dfs_line].style.backgroundColor = "yellow";
 	} else if (dfs_line === 7) {
 		dfs_line = 4;
 		dfs_lines[dfs_line].style.backgroundColor = "yellow";
 	} else if (dfs_line === 9) {
-		dfs_visited[dfs_v] = 1;
+		dfs_visited[getIndex(dfs_v)] = 1;
 		dfs_line++;
 		dfs_lines[dfs_line].style.backgroundColor = "yellow";
 	} else if (dfs_line === 10) {
@@ -602,43 +752,210 @@ function nextDFS(event) {
 		dfs_line++;
 		dfs_lines[dfs_line].style.backgroundColor = "yellow";
 	} else if (dfs_line === 11) {
-		if (dfs_w === nextNode) dfs_w = nextNode-1;
-		else dfs_w--;
-		if (dfs_w < 0) {
-			dfs_w = nextNode;
+		if (dfs_w_index === nodes.length) dfs_w_index = nodes.length-1;
+		else dfs_w_index--;
+		if (dfs_w_index < 0) {
+			dfs_w_index = nodes.length;
 			dfs_line = 4;
 		} else {
 			dfs_line++;
 		}
 		dfs_lines[dfs_line].style.backgroundColor = "yellow";
 	} else if (dfs_line === 12) {
-		if (containsEdge(dfs_v, dfs_w) && !dfs_visited[dfs_w]) dfs_line++;
+		if (containsEdge(dfs_v, nodes[dfs_w_index]) && !dfs_visited[dfs_w_index]) dfs_line++;
 		else dfs_line--;
 		dfs_lines[dfs_line].style.backgroundColor = "yellow";
 	} else if (dfs_line === 13) {
-		dfs_s.push(dfs_w);
-		document.getElementById('dfs-q').innerHTML += `${dfs_w}\n`;
-		nodes[dfs_w].style.boxShadow = '0px 0px 15px 5px rgba(0, 0, 255, .75)';
+		dfs_s.push(nodes[dfs_w_index]);
+		document.getElementById('dfs-q').innerHTML += `${nodes[dfs_w_index]}\n`;
+		node_elements[dfs_w_index].style.boxShadow = '0px 0px 15px 5px rgba(0, 0, 255, .75)';
 		dfs_line = 11;
 		dfs_lines[dfs_line].style.backgroundColor = "yellow";
 	} else if (dfs_line === 18) {
 		document.getElementById('dfs-next').disabled = true;
+		document.getElementById('dfs-start').disabled = false;
 	}
 }
 
 function resetDFS(event) {
 	document.getElementById('dfs-source').disabled = false;
+	document.getElementById('dfs-start').disabled = false;
 	document.getElementById('dfs-next').disabled = true;
 	document.getElementById('dfs-reset').disabled = true;
 	dfs_running = false;
 	dfs_lines[dfs_line].style.backgroundColor = "whitesmoke";
-	for (let i = 0; i < nextNode; i++) {
-		nodes[i].style.boxShadow = 'none';
+	for (let i = 0; i < nodes.length; i++) {
+		node_elements[i].style.boxShadow = 'none';
 	}
 	document.getElementById('dfs-terminal').innerHTML = '';
 	document.getElementById('dfs-q').innerHTML = '';
 }
 
+
+/*****************************
+******************************
+
+Dijkstra STUFF
+
+******************************
+*****************************/
+
+let dijkstra_line = 0;
+let dijkstra_vset = new Set();
+let dijkstra_source = 0;
+let dijkstra_v = -1;
+let dijkstra_dist;
+let dijkstra_pred;
+let dijkstra_w_index = -1;
+let dijkstra_running = false;
+
+function showDijkstra(event) {
+	if (dfs_running) resetDFS();
+	if (bfs_running) resetBFS();
+	let dfs_button = document.getElementById('dfs-button');
+	let bfs_button = document.getElementById('bfs-button');
+	let dfs = document.getElementById('dfs');
+	let bfs = document.getElementById('bfs');
+	let dijkstra = document.getElementById('dijkstra');
+	dfs_button.style.backgroundColor = '#F0F0F0';
+	bfs_button.style.backgroundColor = '#F0F0F0';
+	dfs.style.display = 'none';
+	bfs.style.display = 'none';
+	this.style.backgroundColor = 'white';
+	dijkstra.style.display = 'flex';
+}
+
+function startDijkstra(event) {
+	const sourceText = document.getElementById('dijkstra-source').value;
+	if (sourceText === undefined || sourceText === '') {
+		alert("Source is not a valid node :(");
+		return;
+	}
+	dijkstra_source = parseInt(sourceText);
+	if (dijkstra_source < 0 || !nodes.includes(dijkstra_source)) {
+		alert("Source is not a valid node :(");
+		return;
+	}
+	document.getElementById('dijkstra-source').disabled = true;
+	document.getElementById('dijkstra-start').disabled = true;
+	document.getElementById('dijkstra-next').disabled = false;
+	document.getElementById('dijkstra-reset').disabled = false;
+	dijkstra_line = 5;
+	dijkstra_lines[dijkstra_line].style.backgroundColor = "yellow";
+	dijkstra_dist = [];
+	dijkstra_pred = [];
+	dijkstra_vset.clear();
+	dijkstra_running = true;
+	dijkstra_v = -1;
+	dijkstra_w_index = -1;
+	let dijkstra_table = document.getElementById('dijkstra-table');
+	for (let i = 0; i < nodes.length; i++) {
+		let th = document.createElement('th');
+		let td1 = document.createElement('td');
+		let td2 = document.createElement('td');
+		th.innerHTML = nodes[i];
+		dijkstra_table.rows[0].appendChild(th);
+		dijkstra_table.rows[1].appendChild(td1);
+		dijkstra_table.rows[2].appendChild(td2);
+	}
+}
+
+function nextDijkstra(event) {
+	dijkstra_lines[dijkstra_line].style.backgroundColor = "whitesmoke";
+	if (dijkstra_line === 5) {
+		let dijkstra_table = document.getElementById('dijkstra-table');
+		for (let i = 0; i < nodes.length; i++) {
+			dijkstra_table.rows[1].cells[i+1].innerHTML = '∞';
+			dijkstra_dist[i] = Infinity;
+		}
+		dijkstra_line++;
+		dijkstra_lines[dijkstra_line].style.backgroundColor = "yellow";
+	} else if (dijkstra_line === 6) {
+		dijkstra_dist[getIndex(dijkstra_source)] = 0;
+		let dijkstra_table = document.getElementById('dijkstra-table');
+		dijkstra_table.rows[1].cells[getIndex(dijkstra_source)+1].innerHTML = 0;
+		dijkstra_line++;
+		dijkstra_lines[dijkstra_line].style.backgroundColor = "yellow";
+	} else if (dijkstra_line === 7) {
+		let dijkstra_table = document.getElementById('dijkstra-table');
+		for (let i = 0; i < nodes.length; i++) {
+			dijkstra_table.rows[2].cells[i+1].innerHTML = '-1';
+			dijkstra_pred[i] = -1;
+		}
+		dijkstra_line++;
+		dijkstra_lines[dijkstra_line].style.backgroundColor = "yellow";
+	} else if (dijkstra_line === 8) {
+		let vset = document.getElementById('dijkstra-vset');
+		for (let i = 0; i < nodes.length; i++) {
+			dijkstra_vset.add(nodes[i]);
+			vset.innerHTML += ` ${nodes[i]} `;
+		}
+		dijkstra_line++;
+		dijkstra_lines[dijkstra_line].style.backgroundColor = "yellow";
+	} else if (dijkstra_line === 9) {
+		if (dijkstra_vset.size === 0) dijkstra_line = 15;
+		else dijkstra_line++;
+		dijkstra_lines[dijkstra_line].style.backgroundColor = "yellow";
+	} else if (dijkstra_line === 10) {
+		let minIndex = -1
+		dijkstra_vset.forEach(v => {
+			if (minIndex === -1 || dijkstra_dist[getIndex(v)] < dijkstra_dist[getIndex(minIndex)]) minIndex = v;
+		});
+		dijkstra_v = minIndex;
+		node_elements[getIndex(dijkstra_v)].style.boxShadow = '0px 0px 15px 5px rgba(0, 255, 0, .75)';
+		dijkstra_line++;
+		dijkstra_lines[dijkstra_line].style.backgroundColor = "yellow";
+	} else if (dijkstra_line === 11) {
+		if (dijkstra_w_index === -1) {
+			dijkstra_w_index = 0;
+		} else {
+			dijkstra_w_index++;
+		}
+		while (dijkstra_w_index < nodes.length && !containsEdge(dijkstra_v, nodes[dijkstra_w_index])) dijkstra_w_index++;
+		if (dijkstra_w_index >= nodes.length) {
+			dijkstra_w_index = -1;
+			dijkstra_line = 14;
+		} else {
+			dijkstra_line++;
+		}
+		dijkstra_lines[dijkstra_line].style.backgroundColor = "yellow";
+	} else if (dijkstra_line === 12) {
+		let sum = dijkstra_dist[getIndex(dijkstra_v)] + getWeight(dijkstra_v, nodes[dijkstra_w_index]);
+		if (sum < dijkstra_dist[dijkstra_w_index]) {
+			dijkstra_dist[dijkstra_w_index] = sum;
+			dijkstra_pred[dijkstra_w_index] = dijkstra_v;
+			let dijkstra_table = document.getElementById('dijkstra-table');
+			dijkstra_table.rows[1].cells[dijkstra_w_index+1].innerHTML = sum;
+			dijkstra_table.rows[2].cells[dijkstra_w_index+1].innerHTML = dijkstra_v;
+		}
+		dijkstra_line--;
+		dijkstra_lines[dijkstra_line].style.backgroundColor = "yellow";
+	} else if (dijkstra_line === 14) {
+		dijkstra_vset.delete(dijkstra_v);
+		let vset = document.getElementById('dijkstra-vset');
+		vset.innerHTML = vset.innerHTML.replace(` ${dijkstra_v} `, '');
+		node_elements[getIndex(dijkstra_v)].style.boxShadow = '0px 0px 15px 5px rgba(255, 0, 0, .75)';
+		dijkstra_line = 9;
+		dijkstra_lines[dijkstra_line].style.backgroundColor = "yellow";
+	} else if (dijkstra_line === 15) {
+		document.getElementById('dijkstra-next').disabled = true;
+		document.getElementById('dijkstra-start').disabled = false;
+	}
+}
+
+function resetDijkstra(event) {
+	document.getElementById('dijkstra-source').disabled = false;
+	document.getElementById('dijkstra-start').disabled = false;
+	document.getElementById('dijkstra-next').disabled = true;
+	document.getElementById('dijkstra-reset').disabled = true;
+	dijkstra_running = false;
+	dijkstra_lines[dijkstra_line].style.backgroundColor = "whitesmoke";
+	for (let i = 0; i < nodes.length; i++) {
+		node_elements[i].style.boxShadow = 'none';
+	}
+	document.getElementById('dijkstra-vset').innerHTML = '';
+	// TODO clear dist and pred
+}
 
 
 /*****************************
@@ -656,28 +973,50 @@ function initGraph(n) {
 	m = [];
 	l = [];
 	for (let i = 0; i < n; i++) {
-		m.push([-1, -1, -1, -1, -1]);
+		m.push([-1, -1, -1, -1, -1]); // FIX ME
 		l.push([]);
 	}
 }
 
 function insertNode(num) {
-	m.forEach(row => {row.push(-1);});
+	let index = getIndex(num);
+	m.forEach(row => {row.splice(index, 0, NaN);});
 	let tmp = [];
-	for (let i = 0; i <= num; i++) tmp.push(-1);
-	m.push(tmp);
-	l.push([]);
+	for (let i = 0; i <= nodes.length; i++) tmp.push(NaN);
+	m.splice(index, 0, tmp);
+	l.splice(index, 0, []);
 }
 
-function insertEdge(from, to, directed) {
-	m[from][to] = '1';
-	l[from].push(to);
+function removeNode(num, index) {
+	m.splice(index, 1);
+	m.forEach(row => {row.splice(index, 1);});
+	l.splice(index, 1);
+}
+
+function insertEdge(from, to, directed, weight) {
+	const fromIndex = getIndex(from);
+	const toIndex = getIndex(to);
+	m[fromIndex][toIndex] = weight;
+	l[fromIndex].push(to);
 	if (!directed) {
-		m[to][from] = '1';
-		l[to].push(from);
+		m[toIndex][fromIndex] = weight;
+		l[toIndex].push(from);
 	}
 }
 
 function containsEdge(from, to) {
-	return m[from][to] !== -1;
+	const fromIndex = getIndex(from);
+	const toIndex = getIndex(to);
+	// console.log(m[fromIndex][toIndex]);
+	// console.log(m[fromIndex][toIndex] !== NaN);
+	return !isNaN(m[fromIndex][toIndex]);
+}
+
+function getWeight(from, to) {
+	const fromIndex = getIndex(from);
+	const toIndex = getIndex(to);
+	// console.log(m[fromIndex][toIndex]);
+	// console.log(m[fromIndex][toIndex] !== NaN);
+	if (!isNaN(m[fromIndex][toIndex])) return m[fromIndex][toIndex];
+	return Infinity;
 }

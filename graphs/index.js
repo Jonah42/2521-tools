@@ -266,9 +266,12 @@ function createNode(event) {
 	n.addEventListener('click', selectNode);
 	document.getElementById('graph-container').appendChild(n);
 	node_elements.push(n);
-	node_elements.sort((a, b) => {return parseInt(a.value) < parseInt(b.value)});
+	node_elements.sort((a, b) => {return parseInt(a.value) - parseInt(b.value)});
+	console.log(nodes);
 	nodes.push(value);
-	nodes.sort((a, b) => {return a < b;});
+	nodes.sort((a, b) => {return a - b;});
+	console.log("sorted:");
+	console.log(nodes);
 	outgoing.splice(getIndex(value), 0, []);
 	insertNode(value);
 	// Update matrix
@@ -303,8 +306,8 @@ function deleteNode(node) {
 }
 
 function selectNode(event) {
+	event.stopPropagation();
 	if (bfs_running || dfs_running || dijkstra_running) {
-		event.stopPropagation();
 		alert('You cant change the graph while the algo is running :( - try resetting the algo first.');
 		return;
 	}
@@ -322,7 +325,7 @@ function selectNode(event) {
 				// console.log("MMMM");
 				selected2 = this;
 				promptWeight();
-				event.stopPropagation();
+				// event.stopPropagation();
 				return;
 			} else {
 				drawLine(selected, this);
@@ -331,7 +334,7 @@ function selectNode(event) {
 		selected.style.boxShadow = 'none';
 		selected = null;
 	}
-	event.stopPropagation();
+	// event.stopPropagation();
 }
 
 function promptWeight() {
@@ -996,6 +999,7 @@ function removeNode(num, index) {
 function insertEdge(from, to, directed, weight) {
 	const fromIndex = getIndex(from);
 	const toIndex = getIndex(to);
+	console.log(from, to, directed, weight, fromIndex, toIndex);
 	m[fromIndex][toIndex] = weight;
 	l[fromIndex].push(to);
 	if (!directed) {
